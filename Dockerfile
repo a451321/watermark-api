@@ -11,10 +11,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 安装 Playwright 浏览器（用于 JS 渲染的备用方案）
-RUN playwright install chromium && \
-    playwright install-deps chromium
-
 # 复制代码
 COPY . .
 
