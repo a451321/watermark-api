@@ -14,6 +14,7 @@ from pydantic import BaseModel, HttpUrl
 from parsers.douyin import DouyinParser
 from parsers.kuaishou import KuaishouParser
 from parsers.xiaohongshu import XiaohongshuParser
+from parsers.bilibili import BilibiliParser
 
 # ============================================================
 # 初始化
@@ -41,6 +42,7 @@ PARSERS = {
     "douyin": DouyinParser(),
     "kuaishou": KuaishouParser(),
     "xiaohongshu": XiaohongshuParser(),
+    "bilibili": BilibiliParser(),
 }
 
 # 日志中间件
@@ -68,7 +70,7 @@ class ParseResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "ok"
     version: str = "1.0.0"
-    parsers: list = ["douyin", "kuaishou", "xiaohongshu"]
+    parsers: list = ["douyin", "kuaishou", "xiaohongshu", "bilibili"]
 
 
 # ============================================================
@@ -196,6 +198,8 @@ def detect_platform(url: str) -> Optional[str]:
         return "kuaishou"
     if any(d in url_lower for d in ["xiaohongshu.com", "xhslink.com"]):
         return "xiaohongshu"
+    if any(d in url_lower for d in ["bilibili.com", "b23.tv"]):
+        return "bilibili"
     
     return None
 
