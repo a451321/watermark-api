@@ -44,7 +44,7 @@ class KuaishouParser(BaseParser):
                 return result
 
             # 尝试从 meta 标签获取
-            soup = BeautifulSoup(html, 'lxml')
+            soup = BeautifulSoup(html, 'html.parser')
             result = self._parse_meta(soup, url)
             return result
 

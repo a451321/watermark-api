@@ -68,7 +68,7 @@ class XiaohongshuParser(BaseParser):
                 return result
 
             # 尝试从 meta 标签提取
-            soup = BeautifulSoup(resp.text, 'lxml')
+            soup = BeautifulSoup(resp.text, 'html.parser')
             result = self._parse_meta(soup, url, note_id)
             return result
 

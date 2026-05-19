@@ -97,7 +97,7 @@ class DouyinParser(BaseParser):
 
     def _parse_html(self, html: str, video_id: str) -> Optional[Dict[str, Any]]:
         """从 HTML 中提取视频数据"""
-        soup = BeautifulSoup(html, 'lxml')
+        soup = BeautifulSoup(html, 'html.parser')
 
         # 尝试提取 RENDER_DATA (抖音 SSG 渲染数据)
         render_match = re.search(
