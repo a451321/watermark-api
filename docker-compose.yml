@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    container_name: watermark-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - REDIS_URL=redis://redis:6379
+    restart: unless-stopped
+    depends_on:
+      - redis
+
+  # Redis 缓存（可选，提升性能）
+  redis:
+    image: redis:7-alpine
+    container_name: watermark-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:
