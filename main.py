@@ -74,8 +74,61 @@ class HealthResponse(BaseModel):
 
 
 # ============================================================
-# 路由
+# 调试路由
 # ============================================================
+
+@app.get("/api/debug/douyin/{video_id}")
+async def debug_douyin(video_id: str):
+    """调试：查看抖音 API 原始返回数据"""
+    from parsers.douyin import DouyinParser
+    dp = DouyinParser()
+    
+    import random, string, httpx
+    
+    results = {}
+    
+    # 测试 iesdouyin API
+    try:
+        ttwid = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
+        cookie = f"ttwid=1%7C{ttwid}%7C0%7C1%7C0%7C1%7C0%7C0%7C0%7C0%7C0%7C0%7C0%7C0;"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+            "Referer": "https://www.douyin.com/",
+            "Cookie": cookie,
+        }
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(f"https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids={video_id}", headers=headers)
+            results["iesdouyin_api"] = {"status": r.status_code, "body": r.text[:2000]}
+    except Exception as e:
+        results["iesdouyin_api"] = {"error": str(e)}
+    
+    # 测试 douyin aweme detail API  
+    try:
+        ttwid2 = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
+        cookie2 = f"ttwid=1%7C{ttwid2}%7C0%7C1%7C0%7C1%7C0%7C0%7C0%7C0%7C0%7C0%7C0%7C0;"
+        headers2 = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+            "Referer": f"https://www.douyin.com/video/{video_id}",
+            "Cookie": cookie2,
+        }
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(f"https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id={video_id}&aid=6383", headers=headers2)
+            results["douyin_aweme_api"] = {"status": r.status_code, "body": r.text[:2000]}
+    except Exception as e:
+        results["douyin_aweme_api"] = {"error": str(e)}
+    
+    # 测试 HTML 页面 RENDER_DATA 存在与否
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(f"https://www.douyin.com/video/{video_id}", headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            })
+            has_render = "RENDER_DATA" in r.text
+            results["html_page"] = {"status": r.status_code, "has_RENDER_DATA": has_render, "length": len(r.text)}
+    except Exception as e:
+        results["html_page"] = {"error": str(e)}
+    
+    return {"video_id": video_id, "results": results}
 
 @app.get("/", response_model=HealthResponse)
 async def root():
@@ -124,7 +177,7 @@ async def parse_url(request: ParseRequest):
     if not platform:
         raise HTTPException(
             status_code=400, 
-            detail="未识别的平台链接，目前支持：抖音、快手、小红书"
+            detail="未识别的平台链接，目前支持：抖音、快手、小红书、哔哩哔哩"
         )
     
     # 调用对应解析器

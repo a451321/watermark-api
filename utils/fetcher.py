@@ -52,7 +52,7 @@ def get_headers(referer: str = "", platform: str = "") -> dict:
 class Fetcher:
     """HTTP 请求客户端"""
 
-    def __init__(self, timeout: int = 15, max_retries: int = 3):
+    def __init__(self, timeout: int = 8, max_retries: int = 1):
         self.timeout = timeout
         self.max_retries = max_retries
 

@@ -52,28 +52,43 @@ class DouyinParser(BaseParser):
     async def _fetch_video_data(self, video_id: str, url: str) -> Dict[str, Any]:
         """
         获取视频数据
-        方法: 请求 douyin.com 的 SSG API (服务端渲染时的接口)
+        方法: 多种 API 降级尝试
         """
         headers = get_headers(platform="douyin")
+        
+        # ====== 方法1: iesdouyin API (带 Cookie) ======
+        try:
+            result = await self._fetch_via_ies_api(video_id)
+            if result and result.get("videoUrl"):
+                return result
+        except Exception as e:
+            print(f"[Douyin] iesdouyin API 失败: {e}")
 
-        # 方法1: 请求视频页面 HTML，提取 RENDER_DATA
+        # ====== 方法2: douyin 新版 API ======
+        try:
+            result = await self._fetch_via_new_api(video_id)
+            if result and result.get("videoUrl"):
+                return result
+        except Exception as e:
+            print(f"[Douyin] 新版API 失败: {e}")
+
+        # ====== 方法3: HTML 页面 RENDER_DATA ======
         try:
             video_url = f"https://www.douyin.com/video/{video_id}"
             resp = await fetcher.get(video_url, headers=headers)
-
             result = self._parse_html(resp.text, video_id)
             if result and result.get("videoUrl"):
                 return result
         except Exception as e:
             print(f"[Douyin] HTML 解析失败: {e}")
 
-        # 方法2: 使用 douyin.com 的 API 接口
+        # ====== 方法4: 第三方免费解析 API ======
         try:
-            result = await self._fetch_via_api(video_id)
+            result = await self._fetch_via_third_party(video_id)
             if result and result.get("videoUrl"):
                 return result
         except Exception as e:
-            print(f"[Douyin] API 解析失败: {e}")
+            print(f"[Douyin] 第三方API 失败: {e}")
 
         # 返回基本信息
         return {
@@ -94,6 +109,134 @@ class DouyinParser(BaseParser):
             "originalUrl": url,
             "error": "解析失败，请确认链接有效或稍后重试"
         }
+
+    async def _fetch_via_ies_api(self, video_id: str) -> Optional[Dict[str, Any]]:
+        """方法1: iesdouyin API + Cookie"""
+        import random, string
+        # 生成随机 ttwid cookie (抖音设备标识)
+        ttwid = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
+        cookie = f"ttwid=1%7C{ttwid}%7C0%7C1%7C0%7C1%7C0%7C0%7C0%7C0%7C0%7C0%7C0%7C0;"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+            "Referer": "https://www.douyin.com/",
+            "Cookie": cookie,
+        }
+        
+        api_url = f"https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids={video_id}"
+        resp = await fetcher.get(api_url, headers=headers)
+        data = resp.json()
+        
+        print(f"[Douyin] iesdouyin API status_code: {data.get('status_code')}, items: {len(data.get('item_list', []))}")
+        
+        if data.get("status_code") == 0 and data.get("item_list"):
+            item = data["item_list"][0]
+            return self._parse_api_item(item)
+        
+        return None
+
+    async def _fetch_via_new_api(self, video_id: str) -> Optional[Dict[str, Any]]:
+        """方法2: douyin aweme detail API (多参数尝试)"""
+        import random, string
+        
+        # 尝试多种 aid 参数组合
+        configs = [
+            {"aid": "1128", "device_platform": "android", "desc": "Android App"},
+            {"aid": "6383", "device_platform": "webapp", "desc": "Web App"},
+        ]
+        
+        for cfg in configs:
+            try:
+                ttwid = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
+                cookie = f"ttwid=1%7C{ttwid}%7C0%7C1%7C0%7C1%7C0%7C0%7C0%7C0%7C0%7C0%7C0%7C0;"
+                
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+                    "Referer": "https://www.douyin.com/",
+                    "Cookie": cookie,
+                }
+                
+                api_url = f"https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id={video_id}&aid={cfg['aid']}&device_platform={cfg['device_platform']}"
+                print(f"[Douyin] 尝试 {cfg['desc']} API: aid={cfg['aid']}")
+                resp = await fetcher.get(api_url, headers=headers)
+                data = resp.json()
+                
+                aweme = data.get("aweme_detail", {})
+                if aweme:
+                    print(f"[Douyin] {cfg['desc']} API 成功获取视频数据!")
+                    return self._parse_api_item(aweme)
+                
+                print(f"[Douyin] {cfg['desc']} API 返回空, status_code={data.get('status_code')}")
+                
+            except Exception as e:
+                print(f"[Douyin] {cfg['desc']} API 失败: {e}")
+                continue
+        
+        return None
+
+    async def _fetch_via_third_party(self, video_id: str) -> Optional[Dict[str, Any]]:
+        """方法3: 国内免费解析服务"""
+        short_url = f"https://v.douyin.com/{video_id}/"
+        
+        # 尝试多个国内免费解析 API
+        services = [
+            {
+                "url": "https://api.vvhan.com/api/douyin/video",
+                "params": {},
+                "get_url": f"https://api.vvhan.com/api/douyin/video?url={short_url}",
+            },
+            {
+                "url": "https://api.oioweb.cn/api/video/douyin",
+                "params": {},
+                "get_url": f"https://api.oioweb.cn/api/video/douyin?url=https://www.douyin.com/video/{video_id}",
+            },
+        ]
+        
+        for svc in services:
+            try:
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                }
+                print(f"[Douyin] 尝试第三方API: {svc['get_url'][:80]}...")
+                resp = await fetcher.get(svc["get_url"], headers=headers)
+                
+                # 先打印原始响应
+                print(f"[Douyin] 第三方API响应 status={resp.status_code}, body={resp.text[:200]}")
+                
+                data = resp.json()
+                
+                # 不同服务返回格式不同
+                video_url = (
+                    data.get("video") or
+                    data.get("data", {}).get("video") or
+                    data.get("data", {}).get("url") or
+                    data.get("url") or
+                    data.get("video_url") or
+                    ""
+                )
+                
+                if video_url and video_url.startswith("http"):
+                    return {
+                        "title": data.get("title") or data.get("data", {}).get("title", f"抖音视频 {video_id}"),
+                        "description": "",
+                        "cover": data.get("cover") or data.get("data", {}).get("cover", ""),
+                        "author": data.get("author") or data.get("data", {}).get("author", ""),
+                        "avatar": "",
+                        "type": "video",
+                        "videoUrl": video_url,
+                        "images": [],
+                        "musicUrl": data.get("music") or data.get("data", {}).get("music", ""),
+                        "platform": "douyin",
+                        "duration": 0,
+                        "likes": 0,
+                        "comment_count": 0,
+                        "share_count": 0,
+                    }
+            except Exception as e:
+                print(f"[Douyin] 第三方API {svc['get_url'][:50]} 失败: {e}")
+                continue
+        
+        return None
 
     def _parse_html(self, html: str, video_id: str) -> Optional[Dict[str, Any]]:
         """从 HTML 中提取视频数据"""
@@ -222,25 +365,6 @@ class DouyinParser(BaseParser):
     def _extract_from_initial_state(self, data: dict) -> Optional[Dict]:
         """从 __INITIAL_STATE__ 提取视频数据"""
         return self._find_video_in_render(data)
-
-    async def _fetch_via_api(self, video_id: str) -> Optional[Dict[str, Any]]:
-        """通过 API 接口获取视频数据"""
-        try:
-            api_url = f"https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids={video_id}"
-            headers = get_headers(platform="douyin")
-            headers["Referer"] = f"https://www.douyin.com/video/{video_id}"
-
-            resp = await fetcher.get(api_url, headers=headers)
-            data = resp.json()
-
-            if data.get("status_code") == 0 and data.get("item_list"):
-                item = data["item_list"][0]
-                return self._parse_api_item(item)
-
-        except Exception as e:
-            print(f"[Douyin] API 请求失败: {e}")
-
-        return None
 
     def _parse_api_item(self, item: dict) -> Dict[str, Any]:
         """解析 API 返回的视频条目"""
